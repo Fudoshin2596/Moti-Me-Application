@@ -1,0 +1,151 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  MotiMe App
+
+Resources:
+  MotiMeStateMachine:
+    Type: AWS::Serverless::StateMachine # More info about State Machine Resource: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-resource-statemachine.html
+    Properties:
+      DefinitionUri: statemachine/motime.asl.json
+      DefinitionSubstitutions:
+        MasterFunctionArn: !GetAtt MasterFunction.Arn
+        DDBPutItem: !Sub arn:${AWS::Partition}:states:::dynamodb:putItem
+        DDBTable: !Ref DBQuoteTable
+      Events:
+        DailySchedule:
+          Type: Schedule # More info about Schedule Event Source: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-property-statemachine-schedule.html
+          Properties:
+            Description: Schedule to run the motime state machine every hour
+            Enabled: True # This schedule is disabled by default to avoid incurring charges.
+            Schedule: "rate(12 hours)"
+      Policies: # Find out more about SAM policy templates: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-policy-templates.html
+        - LambdaInvokePolicy:
+            FunctionName: !Ref MasterFunction
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DBQuoteTable
+
+  DBQuoteTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: "QuoteDB"
+      AttributeDefinitions:
+        -
+          AttributeName: "to_sid"
+          AttributeType: "S"
+      KeySchema:
+        -
+          AttributeName: "to_sid"
+          KeyType: "HASH"
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+
+  MasterFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      CodeUri: functions/master_func/
+      Handler: app.lambda_handler
+      Environment:
+        Variables:
+          Twitter_API_KEY: Twitter_API_KEY
+          Twitter_API_SECRET: Twitter_API_SECRET
+          Twitter_BEARER_TOKEN: Twitter_BEARER_TOKEN
+          XRAPIDURL: XRAPIDURL
+          XRAPIDHOST: XRAPIDHOST
+          XRAPIDKEY: XRAPIDKEY
+          TWILIO_PHONE_NUMBER: TWILIO_PHONE_NUMBER
+          TWILIO_ACCOUNT_SID: TWILIO_ACCOUNT_SID
+          TWILIO_AUTH_TOKEN: TWILIO_AUTH_TOKEN
+          USER_POOL_ID: USER_POOL_ID
+          lambda_function_name_url: lambda_function_name_url
+      Runtime: python3.8
+      Timeout: 15
+      Tracing: Active
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - AWSLambdaReadOnlyAccess
+        - AWSXRayDaemonWriteAccess
+        - DynamoDBCrudPolicy:
+            TableName:
+              !Ref DBQuoteTable
+
+  MotiMeRestAPI:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: MotoMeApiRole
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+  Method:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: POST
+      ResourceId: !GetAtt MotiMeRestAPI.RootResourceId
+      RestApiId: !Ref MotiMeRestAPI
+      AuthorizationType: NONE
+      Integration:
+        Credentials: !GetAtt InvokeRecieveTLQuoteFunctionRole.Arn
+        Type: AWS
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${RecieveTLQuoteFunction.Arn}/invocations
+        IntegrationHttpMethod: POST
+  Deployment:
+    DependsOn: Method
+    Type: AWS::ApiGateway::Deployment
+    Properties:
+      RestApiId: !Ref MotiMeRestAPI
+      StageName: Prod
+  RecieveTLQuoteFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/recieve_twilio_sms/
+      Handler: app.lambda_handler
+      Environment:
+        Variables:
+          TWILIO_PHONE_NUMBER: TWILIO_PHONE_NUMBER
+          TWILIO_ACCOUNT_SID: TWILIO_ACCOUNT_SID
+          TWILIO_AUTH_TOKEN: TWILIO_AUTH_TOKEN
+      Runtime: python3.8
+      Timeout: 20
+      Tracing: Active
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - AWSLambdaReadOnlyAccess
+        - AWSXRayDaemonWriteAccess
+        - DynamoDBCrudPolicy:
+            TableName:
+              !Ref DBQuoteTable
+  InvokeRecieveTLQuoteFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - apigateway.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Policies:
+        - PolicyName: InvokeRecieveTLQuoteFunctionPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: lambda:*
+                Resource: !GetAtt RecieveTLQuoteFunction.Arn
+
+Outputs:
+  # MotiMeStateMachineDailySchedule is an implicit Schedule event rule created out of Events key under Serverless::StateMachine
+  # Find out more about other implicit resources you can reference within SAM
+  # https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-specification-generated-resources.html
+  MotiMeRestAPIInvokeURL:
+    Description: "API Gateway endpoint URL for Prod stage for Motime function"
+    Value: !Sub https://${MotiMeRestAPI}.execute-api.${AWS::Region}.amazonaws.com/Prod/
+  MotiMeStateMachineArn:
+    Description: "MotiMe State machine ARN"
+    Value: !Ref MotiMeStateMachine
+  MotiMeStateMachineRoleArn:
+    Description: "IAM Role created for MotiMe State machine based on the specified SAM Policy Templates"
+    Value: !GetAtt MotiMeStateMachineRole.Arn

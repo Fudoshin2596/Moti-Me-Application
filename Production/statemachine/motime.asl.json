@@ -1,0 +1,18 @@
+{
+  "Comment": "A state machine that sends a quote.",
+  "StartAt": "Master function",
+  "States": {
+    "Master function": {
+      "Type": "Task",
+      "Resource": "${MasterFunctionArn}",
+      "Retry": [
+          {
+              "ErrorEquals": [
+                  "States.ALL"
+              ],
+          }
+      ],
+      "End": true
+    },
+  }
+}
