@@ -76,6 +76,7 @@ Production/packaged.yaml
 
 ### VisualStudioCode ###
 .vscode/*
+*.code-workspace
 !.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
