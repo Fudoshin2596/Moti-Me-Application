@@ -90,3 +90,6 @@ Production/zappa_settings.json
 # Other
 data/text_classification.pkl
 data/outputs/roberta-base.tar.gz
+
+# H2O Wave
+*.state
