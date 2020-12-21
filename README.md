@@ -11,7 +11,7 @@ Deployment Link: http://bit.ly/2WttdqD
 
 ### Development specific  
 
-- In development, the model used is a custom Convolutional Neural Networks based on the Paper ["Convolutional Neural Networks for Sentence Classification"](https://arxiv.org/abs/1408.5882) by Yoon Kim. There is also the option to predict using two other options, a basic LSTM and an LSTM with an Attention Layer. 
+- In development, the model used is a custom CNN based on the Paper ["Convolutional Neural Networks for Sentence Classification"](https://arxiv.org/abs/1408.5882) by Yoon Kim. There is also the option to predict using two other options, a basic LSTM and an LSTM with an Attention Layer.
 - In development, the database in use is PostgreSQL, and there is a H2O Wave dashboard that display's the quotes saved in the DynamoDB.
 - Webhook routing for Twillio is handled through ngrok during development. And user authentication is handling through Flask Login.  
 
