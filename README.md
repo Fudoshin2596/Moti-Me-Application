@@ -64,6 +64,6 @@ Deployment Link: http://bit.ly/2WttdqD
 ## Potential New Features
 
 - Depoloyed version of quote dashboard for each user to see the quotes they've recieved, and have Read, Update, and Delete functionality
-- Once crtical mass is achieved, depoloy a binary classification modle which will predict whether a specific user would like an incomming quote. if yes, send the user that quote, otherwise fetch a new one.
+- Once crtical mass is achieved, depoloy a binary classification model which will predict whether a specific user would like an incomming quote. if yes, send the user that quote, otherwise fetch a new one.
 - Upgraded sign-in, sign-up and homepage frontend experience.
 - Deploy larger DL Pytorch and Transformers classification model to AWS.
