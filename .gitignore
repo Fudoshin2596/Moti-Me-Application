@@ -75,6 +75,7 @@ Production/.aws-sam
 Production/packaged.yaml
 
 ### VisualStudioCode ###
+.vscode
 .vscode/*
 *.code-workspace
 !.vscode/settings.json
