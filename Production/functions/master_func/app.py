@@ -1,13 +1,15 @@
 # Primary imports
-from dotenv import load_dotenv, find_dotenv
 import os
 import re
 import json
 import jsonpickle
 import random
+from random import randint
 import requests
 import logging
-from collections import Counter
+import http.client
+import itertools
+from collections import Counter, defaultdict
 
 # third-party imports
 from bs4 import BeautifulSoup as Soup
@@ -17,6 +19,7 @@ from boto3.dynamodb.conditions import Attr
 from aws_xray_sdk.core import xray_recorder
 from aws_xray_sdk.core import patch_all
 from dotenv import load_dotenv
+from hashids import Hashids
 
 # helpers
 load_dotenv()
@@ -34,22 +37,52 @@ def update_logger(data_list):
         logger.info(jsonpickle.encode(item))
 
 #################### GLOBAL ENV VARIBLES #######################################
+# AWS SSM encrypted parameter store
+ssm = boto3.client('ssm')
 
-account_sid = os.getenv('TWILIO_ACCOUNT_SID')
-auth_token = os.getenv('TWILIO_AUTH_TOKEN')
-TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")
-Twitter_auth = os.getenv("Twitter_BEARER_TOKEN")
-XRAPIDURL = os.getenv('XRAPIDURL')
-xrapidapihost = os.getenv('XRAPIDHOST')
-xrapidapikey = os.getenv('XRAPIDKEY')
-UserPoolId = os.getenv("USER_POOL_ID")
-prediction_lambda_url = os.getenv("lambda_function_name_url")
+def get_ssm_param(param_name: str, required: bool = True) -> str:
+    """Get an encrypted AWS Systems Manger secret."""
+    response = ssm.get_parameters(
+        Names=[param_name],
+        WithDecryption=True,
+    )
+    if not response['Parameters'] or not response['Parameters'][0] or not response['Parameters'][0]['Value']:
+        if not required:
+            return None
+        raise Exception(
+            f"Configuration error: missing AWS SSM parameter: {param_name}")
+    return response['Parameters'][0]['Value']
+
+
+account_sid = get_ssm_param('TWILIO_ACCOUNT_SID')
+auth_token = get_ssm_param('TWILIO_AUTH_TOKEN')
+TWILIO_PHONE_NUMBER = get_ssm_param("TWILIO_PHONE_NUMBER")
+Twitter_auth = get_ssm_param("Twitter_BEARER_TOKEN")
+XRAPIDURL = get_ssm_param('XRAPIDURL')
+xrapidapihost = get_ssm_param('XRAPIDHOST')
+xrapidapikey = get_ssm_param('XRAPIDKEY')
+prediction_lambda_url = get_ssm_param("lambda_function_name_url")
+
+SERVER_LOCAL = get_ssm_param('SERVER_LOCAL')
+AUTH0_CALLBACK = get_ssm_param('AUTH0_CALLBACK')
+AUTH0_CALLBACK_URL = f"{SERVER_LOCAL}{AUTH0_CALLBACK}"
+AUTH0_CLIENT_ID = get_ssm_param('AUTH0_CLIENT_ID')
+AUTH0_CLIENT_SECRET = get_ssm_param('AUTH0_CLIENT_SECRET')
+AUTH0_DOMAIN = get_ssm_param('AUTH0_DOMAIN')
+AUTH0_BASE_URL = 'https://' + AUTH0_DOMAIN
+AUTH0_AUDIENCE = ""
+JWT_PAYLOAD = get_ssm_param('JWT_PAYLOAD')
+PROFILE_KEY = get_ssm_param('PROFILE_KEY')
+AUTH0M_CLIENT_ID = get_ssm_param('AUTH0M_CLIENT_ID')
+AUTH0M_CLIENT_SECRET = get_ssm_param('AUTH0M_CLIENT_SECRET')
+AUTH0MAUDIENCE = get_ssm_param('AUTH0MAUDIENCE')
 
 logger.info('## ENVIRONMENT VARIABLES\r' + jsonpickle.encode(dict(**os.environ)))
 
 ######################## GLOBAL RESCOURSES #####################################
+hashids = Hashids()
 
-dynamodb_table = "QuoteDB"
+dynamodb_table = "QuotesM"
 
 clientlb = boto3.client('lambda')
 clientlb.get_account_settings()
@@ -60,9 +93,234 @@ cognitoclient = boto3.client('cognito-idp')
 dynamodb = boto3.resource('dynamodb')
 DynamoDBTable = dynamodb.Table(dynamodb_table)
 
-
 TwilioClient = Client(account_sid, auth_token)
 
+######################## HELPER FUNCTIONS #####################################
+
+
+def getMGMT_API_ACCESS_TOKEN():
+    conn = http.client.HTTPSConnection(AUTH0_DOMAIN)
+    load = {
+        "client_id": AUTH0M_CLIENT_ID,
+        "client_secret": AUTH0M_CLIENT_SECRET,
+        "audience": AUTH0MAUDIENCE,
+        "grant_type": "client_credentials"
+    }
+    payload = json.dumps(load)
+
+    headers = {'content-type': "application/json"}
+
+    conn.request("POST", "/oauth/token", payload, headers)
+
+    res = conn.getresponse()
+    data = json.loads(res.read().decode('utf-8'))
+    return data['access_token']
+
+
+def get_all_users_fromAuth0(test=False):
+    user_info = []
+    conn = http.client.HTTPSConnection(AUTH0_DOMAIN)
+
+    TOKEN = getMGMT_API_ACCESS_TOKEN()
+    MGMT_API_ACCESS_TOKEN = f"Bearer {TOKEN}"
+
+    headers = {'Authorization': MGMT_API_ACCESS_TOKEN}
+
+    url = f"https://{AUTH0_DOMAIN}/api/v2/users?sort=created_at%3A1&search_engine=v3"
+    conn.request("GET", url, headers=headers)
+
+    res = conn.getresponse()
+    users = json.loads(res.read().decode('utf-8'))
+
+    for user in users:
+        user_info.append(
+            {
+                'email': user['email'],
+                'id': user['user_id'],
+                'number': re.findall(r"[0-9]*$", user['user_metadata']['phone_number'])[0],
+            }
+        )
+
+    if test:
+        return json.dumps(user_info, indent=4)
+
+    return user_info
+
+
+def get_user_fromAuth0(user_id, event, context="", test=False):
+    """
+    return list of users with dict of user info and quote
+    [
+        {
+        email: email,
+        id: username,
+        number: number,
+        event:
+            {
+                author: author,
+                quote: quote
+            }
+        }
+    ]
+    """
+    user_info = []
+    conn = http.client.HTTPSConnection(AUTH0_DOMAIN)
+
+    TOKEN = getMGMT_API_ACCESS_TOKEN()
+    MGMT_API_ACCESS_TOKEN = f"Bearer {TOKEN}"
+
+    headers = {'Authorization': MGMT_API_ACCESS_TOKEN}
+
+    url = f"https://{AUTH0_DOMAIN}/api/v2/users/{user_id}"
+    conn.request("GET", url, headers=headers)
+
+    res = conn.getresponse()
+    data = json.loads(res.read().decode('utf-8'))
+
+    user_info.append(
+        {
+            'email': data['email'],
+            'id': data['user_id'],
+            'number': re.findall(r"[0-9]*$", data['user_metadata']['phone_number'])[0],
+            'event': event
+        }
+    )
+
+    if test:
+        return json.dumps(user_info, indent=4)
+
+    return user_info
+
+
+def get_unique_words(quote):
+    quote_list = re.split('[' ', ;, \., :, \n, \t]', quote)
+    quote_list = [x for x in quote_list if x]  # remove empty strings
+    counter = Counter(quote_list)
+    return len(counter)
+
+
+def modify(quote_obj):
+    for i in quote_obj:
+        quote = i['QuoteData']['quote']["S"]
+        i['QuoteData']["quote_length"] = {"N": len(quote)}
+        i['QuoteData']["unique_words"] = {"N": get_unique_words(quote)}
+    return quote_obj
+
+
+def merge(shared_key, *iterables):
+    result = defaultdict(dict)
+    for dictionary in itertools.chain.from_iterable(iterables):
+        result[dictionary[shared_key]].update(dictionary)
+        for dictionary in result.values():
+            dictionary.pop(shared_key)
+    return result
+
+
+def getquotes(quote_id, user_id):
+    """
+    Takes a unique quote id and scans dynamodb for that quotes meta data 
+    returns a new dict with the PK as primary keys and the full meta data as the value
+    """
+    key_to_be_deleted = ["SK", "GSI1"]
+    L4ID = user_id[-4:]
+    last4unique_userid = f"quotetrxn_{quote_id}_{L4ID}"
+
+    quote_list = DynamoDBTable.scan(
+        FilterExpression=Attr('PK').eq(
+            str(quote_id)) & (Attr('SK').eq(last4unique_userid) | Attr('SK').eq('meta'))
+    )
+    quote_dict = merge("PK", quote_list['Items'])[quote_id]
+
+    for key_ in key_to_be_deleted:
+        quote_dict.pop(key_)
+
+    quote_dict_merged = {**quote_dict['QuoteData'], **quote_dict['VoteData']}
+    return quote_dict_merged
+
+
+def getusertrxns(user_id):
+    """
+    Takes a unique user id and scans dynamodb for all quotes recieved by that user and the associated meta data
+    returns a list of quote ids and a new dict with PK as primary keys and the full meta data as the value
+    """
+    quotetrxnitems = DynamoDBTable.scan(
+        FilterExpression=Attr('GSI1').eq(str(user_id))
+    )
+    quotetrxn = quotetrxnitems['Items']
+    quote_ids = getusersquotes(quotetrxn)
+
+    return quote_ids
+
+
+def getusersquotes(quotetrxn):
+    quote_ids = []
+    for item in quotetrxn:
+        quote_ids.append(item["PK"])
+
+    return quote_ids
+
+
+def create_usertable_info(user_id):
+    user_quote_list = []
+    quote_ids = getusertrxns(user_id)
+
+    for id in quote_ids:
+        quote_items = getquotes(id, user_id)
+        user_quote_list.append(quote_items)
+
+    return user_quote_list
+
+
+def get_quote_category(quote):
+    payload = f'{{ "payload": "{quote}" }}'
+    res = requests.post(prediction_lambda_url, data=payload)
+    response_info = json.loads(res.content)['body']
+    return response_info.strip('"')
+
+
+def add_data_to_db(event, context=""):
+    """
+    returns Dynamo DB put response
+    """
+    user_id = event["user_id"]
+    PK = hashids.encode(randint(525, 98524))
+    L4ID = user_id[-4:]
+    SK = f"quotetrxn_{PK}_{L4ID}"
+    quote = event["quote"]
+    author = event["author"]
+    to_sid = event["to_sid"]
+    quote_length = len(quote)
+    num_unique_words = get_unique_words(quote)
+    quote_category = get_quote_category(quote)
+
+    put_quote_res = clientdb.put_item(
+        TableName=dynamodb_table,
+        Item={
+            "PK": {"S": PK},
+            "SK": {"S": 'meta'},
+            "QuoteData": {"M": {
+                "quote": {"S": quote},
+                "author": {"S": author},
+                "category": {"S": quote_category},
+                "quote_length": {"N": str(quote_length)},
+                "unique_words": {"N": str(num_unique_words)}
+            }}
+        })
+
+    put_trxn_res = clientdb.put_item(
+        TableName=dynamodb_table,
+        Item={
+            "PK": {"S": PK},
+            "SK": {"S": SK},
+            "GSI1": {"S": user_id},
+            "VoteData": {"M": {
+                "to_sid": {"S": to_sid},
+                "from_sid": {"S": "TBD"},
+                "vote": {"S": "TBD"}
+            }}
+        })
+
+    return (put_quote_res, put_trxn_res)
 
 ######################## get quote class #######################################
 class Quotes():
@@ -271,7 +529,8 @@ def lambda_handlergq(event, context):
     """
     SENTINAL = True
     while SENTINAL:
-        cl = random.choice([Quote_from_web1(), Quote_from_twitter()])
+        cl = random.choice(
+            [Quote_from_web1(), Quote_from_web2(), Quote_from_Api(), Quote_from_twitter()])
         newevent = cl.make_event()
         quote = newevent["quote"]
         SENTINAL = check_if_in_db(quote)
@@ -285,14 +544,14 @@ def check_if_in_db(quote):
     """
     resp = DynamoDBTable.scan(
         FilterExpression=Attr('quote').eq(str(quote))
-        )
+    )
     if len(resp['Items']) > 0:
         return True
     else:
         return False
 
 
-######################## get cognito user ######################################
+######################## get Auth0 user ######################################
 def lambda_handlergu(event, context):
     """
     return list of users with dict of user info and quote
@@ -310,17 +569,19 @@ def lambda_handlergu(event, context):
     ]
     """
     user_info = []
-    response = cognitoclient.list_users(
-        UserPoolId=UserPoolId,
-        AttributesToGet=['email', 'phone_number'],
-        Filter="status = 'Enabled'"
-    )
+    # response = cognitoclient.list_users(
+    #     UserPoolId=UserPoolId,
+    #     AttributesToGet=['email', 'phone_number'],
+    #     Filter="status = 'Enabled'"
+    # )
+    response = get_all_users_fromAuth0()
 
-    for i, user in enumerate(response["Users"]):
-        id = user["Username"]
-        email = user["Attributes"][1]["Value"]
-        num = re.findall(r"[0-9]*$", user["Attributes"][0]["Value"])[0]
-        user_info.append({"email": email, "id": id, "number": num, "event": event})
+    for i, user in enumerate(response):
+        id = user["id"]
+        email = user['email']
+        num = user['number']
+        user_info.append(
+            {"email": email, "user_id": id, "number": num, "event": event})
 
     update_logger([response, user_info])
     return user_info
@@ -337,7 +598,8 @@ def lambda_handlerte(event, context):
         account_sid: account_sid,
         auth_token: auth_token,
         to: number,
-        from: twilio number
+        from: twilio number,
+        user_id: id
     }
     """
     event_dict = {}
@@ -345,6 +607,7 @@ def lambda_handlerte(event, context):
     quote = event["event"]["quote"]
     author = event["event"]["author"]
     to = event["number"]
+    user_id = event["user_id"]
 
     if author is None:
         event_dict["body"] = quote
@@ -357,6 +620,7 @@ def lambda_handlerte(event, context):
     event_dict["auth_token"] = auth_token
     event_dict["to"] = to
     event_dict["from"] = TWILIO_PHONE_NUMBER
+    event_dict["user_id"] = user_id
 
     update_logger([event_dict])
     return event_dict
@@ -374,17 +638,19 @@ def lambda_handlerst(event, context):
         auth_token: auth_token,
         to: number,
         from: twilio number,
-        sid: outbound api sms sid
+        to_sid: outbound api sms sid
+        user_id: id
     }
     """
     message = TwilioClient.messages.create(
         to=event["to"],
         from_=event["from"],
         body=event["body"]
-        )
-    event["sid"] = message.sid
+    )
+    event["to_sid"] = message.sid
 
-    update_logger([f"Event: {event}", "TwilioClient sent a SMS", event["sid"]])
+    update_logger(
+        [f"Event: {event}", "TwilioClient sent a SMS", event["to_sid"]])
     return event
 
 
@@ -407,25 +673,26 @@ def lambda_handlerdb(event, context):
     """
     returns Dynamo DB put response
     """
-    quote = event["quote"]
-    author = event["author"]
-    sid = event["sid"]
-    quote_length = len(quote)
-    num_unique_words = get_unique_words(quote)
-    quote_category = get_quote_category(quote)
+    # quote = event["quote"]
+    # author = event["author"]
+    # sid = event["sid"]
+    # quote_length = len(quote)
+    # num_unique_words = get_unique_words(quote)
+    # quote_category = get_quote_category(quote)
 
-    res = clientdb.put_item(
-      TableName=dynamodb_table,
-      Item={
-        'quote': {'S': quote},
-        'author': {'S': author},
-        'to_sid': {'S': sid},
-        'quote_length': {'N': str(quote_length)},
-        'num_unique_words': {'N': str(num_unique_words)},
-        'from_sid': {'S': "na"},
-        'vote': {'S': "na"},
-        'quote_category': {'S': quote_category},
-      })
+    # res = clientdb.put_item(
+    #     TableName=dynamodb_table,
+    #     Item={
+    #         'quote': {'S': quote},
+    #         'author': {'S': author},
+    #         'to_sid': {'S': sid},
+    #         'quote_length': {'N': str(quote_length)},
+    #         'num_unique_words': {'N': str(num_unique_words)},
+    #         'from_sid': {'S': "na"},
+    #         'vote': {'S': "na"},
+    #         'quote_category': {'S': quote_category},
+    #     })
+    res = add_data_to_db(event)
 
     update_logger([res])
     return res
