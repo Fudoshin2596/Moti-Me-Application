@@ -2,7 +2,7 @@
 
 MotiMe is a motivational quote web app on steriods
 
-Deployment Link: http://bit.ly/2WttdqD
+Deployment Link: http://bit.ly/38UAqGe
 
 ## Summary
 
