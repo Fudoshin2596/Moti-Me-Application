@@ -1,14 +1,10 @@
 # # Imports
-import sys
 import uuid
 import os
 import itertools
-import http.client
-import requests
-import re
 import json
 from random import randint
-from collections import Counter, defaultdict
+from collections import defaultdict
 
 # # Third party libaries
 from functools import wraps
@@ -21,7 +17,7 @@ from dotenv import load_dotenv, find_dotenv
 
 # # AWS
 import boto3
-from boto3.dynamodb.conditions import Key, Attr
+from boto3.dynamodb.conditions import Attr
 
 load_dotenv(find_dotenv())
 
@@ -51,18 +47,10 @@ if ENV == 'DEV':
     SERVER = os.getenv('SERVER_LOCAL')
 else:
     SERVER = os.getenv('SERVER_PROD')
-account_sid = get_ssm_param('TWILIO_ACCOUNT_SID')
-auth_token = get_ssm_param('TWILIO_AUTH_TOKEN')
-TWILIO_PHONE_NUMBER = get_ssm_param("TWILIO_PHONE_NUMBER")
-Twitter_auth = get_ssm_param("Twitter_BEARER_TOKEN")
-XRAPIDURL = get_ssm_param('XRAPIDURL')
-xrapidapihost = get_ssm_param('XRAPIDHOST')
-xrapidapikey = get_ssm_param('XRAPIDKEY')
 prediction_lambda_url = get_ssm_param("lambda_function_name_url")
 
-SERVER_LOCAL = get_ssm_param('SERVER_LOCAL')
 AUTH0_CALLBACK = get_ssm_param('AUTH0_CALLBACK')
-AUTH0_CALLBACK_URL = f"{SERVER_LOCAL}{AUTH0_CALLBACK}"
+AUTH0_CALLBACK_URL = f"{SERVER}{AUTH0_CALLBACK}"
 AUTH0_CLIENT_ID = get_ssm_param('AUTH0_CLIENT_ID')
 AUTH0_CLIENT_SECRET = get_ssm_param('AUTH0_CLIENT_SECRET')
 AUTH0_DOMAIN = get_ssm_param('AUTH0_DOMAIN')
