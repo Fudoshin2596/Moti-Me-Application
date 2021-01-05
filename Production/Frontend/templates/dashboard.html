@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <div class="login-page clearfix">
+        <div class="logged-in-box auth0-box logged-in">
+            <img class="avatar" src="{{userinfo['picture']}}"/>
+            <h2>Welcome {{userinfo['nickname']}}</h2>
+            <table class="table">
+                <thead> 
+                <tr> 
+                    <th>Quote</th> 
+                    <th>Author</th> 
+                    <th>Category</th> 
+                    <th>Vote</th>
+                    <th>Length</th> 
+                    <th>Unique Words</th> 
+                </tr> 
+                </thead>
+                <tbody>
+                {% for quote in quote_info %} 
+                <tr>
+                    <td>{{quote['quote']}}</td> 
+                    <td>{{quote['author']}}</td>
+                    <td>{{quote['category']}}</td>
+                    <td>{{quote['vote']}}</td>
+                    <td>{{quote['quote_length']}}</td>
+                    <td>{{quote['unique_words']}}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table> 
+            <!-- <pre>{{userinfo_pretty}}</pre> -->
+        </div>
+    </div>
+</div>
+{% endblock %}

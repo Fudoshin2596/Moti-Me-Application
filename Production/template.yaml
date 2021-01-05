@@ -10,37 +10,17 @@ Resources:
       DefinitionUri: statemachine/motime.asl.json
       DefinitionSubstitutions:
         MasterFunctionArn: !GetAtt MasterFunction.Arn
-        DDBPutItem: !Sub arn:${AWS::Partition}:states:::dynamodb:putItem
-        DDBTable: !Ref DBQuoteTable
       Events:
         DailySchedule:
           Type: Schedule # More info about Schedule Event Source: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-property-statemachine-schedule.html
           Properties:
             Description: Schedule to run the motime state machine every hour
             Enabled: True # This schedule is disabled by default to avoid incurring charges.
-            Schedule: "rate(12 hours)"
+            Schedule: "rate(1 day)"
       Policies: # Find out more about SAM policy templates: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-policy-templates.html
         - LambdaInvokePolicy:
             FunctionName: !Ref MasterFunction
-        - DynamoDBCrudPolicy:
-            TableName: !Ref DBQuoteTable
-
-  DBQuoteTable:
-    Type: AWS::DynamoDB::Table
-    Properties:
-      TableName: "QuoteDB"
-      AttributeDefinitions:
-        -
-          AttributeName: "to_sid"
-          AttributeType: "S"
-      KeySchema:
-        -
-          AttributeName: "to_sid"
-          KeyType: "HASH"
-      ProvisionedThroughput:
-        ReadCapacityUnits: 5
-        WriteCapacityUnits: 5
-
+    
   MasterFunction:
     Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
     Properties:
@@ -57,18 +37,16 @@ Resources:
           TWILIO_PHONE_NUMBER: TWILIO_PHONE_NUMBER
           TWILIO_ACCOUNT_SID: TWILIO_ACCOUNT_SID
           TWILIO_AUTH_TOKEN: TWILIO_AUTH_TOKEN
-          USER_POOL_ID: USER_POOL_ID
           lambda_function_name_url: lambda_function_name_url
       Runtime: python3.8
-      Timeout: 15
+      Timeout: 30
       Tracing: Active
       Policies:
         - AWSLambdaBasicExecutionRole
         - AWSLambdaReadOnlyAccess
         - AWSXRayDaemonWriteAccess
-        - DynamoDBCrudPolicy:
-            TableName:
-              !Ref DBQuoteTable
+        - AmazonSSMFullAccess
+        - AmazonDynamoDBFullAccess
 
   MotiMeRestAPI:
     Type: AWS::ApiGateway::RestApi
@@ -95,6 +73,7 @@ Resources:
     Properties:
       RestApiId: !Ref MotiMeRestAPI
       StageName: Prod
+
   RecieveTLQuoteFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -102,7 +81,6 @@ Resources:
       Handler: app.lambda_handler
       Environment:
         Variables:
-          TWILIO_PHONE_NUMBER: TWILIO_PHONE_NUMBER
           TWILIO_ACCOUNT_SID: TWILIO_ACCOUNT_SID
           TWILIO_AUTH_TOKEN: TWILIO_AUTH_TOKEN
       Runtime: python3.8
@@ -112,9 +90,8 @@ Resources:
         - AWSLambdaBasicExecutionRole
         - AWSLambdaReadOnlyAccess
         - AWSXRayDaemonWriteAccess
-        - DynamoDBCrudPolicy:
-            TableName:
-              !Ref DBQuoteTable
+        - AmazonSSMFullAccess
+        - AmazonDynamoDBFullAccess
   InvokeRecieveTLQuoteFunctionRole:
     Type: AWS::IAM::Role
     Properties:

@@ -86,11 +86,15 @@ Production/packaged.yaml
 
 # Zappa 
 Production/zappa_venv/
+Production/Backend/functions/zappa_venv
+Production/Backend/functions/zappa_settings.json
 Production/zappa_settings.json
 
 # Other
 data/text_classification.pkl
 data/outputs/roberta-base.tar.gz
+motime-application.code-workspace
+data/outputs
 
 # H2O Wave
 *.state

@@ -1,4 +1,6 @@
 # Primary imports
+from aws_xray_sdk.core import patch_all
+from aws_xray_sdk.core import xray_recorder
 import os
 import re
 import json
@@ -16,8 +18,6 @@ from bs4 import BeautifulSoup as Soup
 from twilio.rest import Client
 import boto3
 from boto3.dynamodb.conditions import Attr
-from aws_xray_sdk.core import xray_recorder
-from aws_xray_sdk.core import patch_all
 from dotenv import load_dotenv
 from hashids import Hashids
 
@@ -25,6 +25,8 @@ from hashids import Hashids
 load_dotenv()
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+
+# comment out if testing locally
 patch_all()
 
 
@@ -36,22 +38,24 @@ def update_logger(data_list):
     for item in data_list:
         logger.info(jsonpickle.encode(item))
 
+
 #################### GLOBAL ENV VARIBLES #######################################
 # AWS SSM encrypted parameter store
 ssm = boto3.client('ssm')
 
+
 def get_ssm_param(param_name: str, required: bool = True) -> str:
     """Get an encrypted AWS Systems Manger secret."""
-    response = ssm.get_parameters(
-        Names=[param_name],
+    response = ssm.get_parameter(
+        Name=param_name,
         WithDecryption=True,
     )
-    if not response['Parameters'] or not response['Parameters'][0] or not response['Parameters'][0]['Value']:
+    if not response['Parameter']:
         if not required:
             return None
         raise Exception(
             f"Configuration error: missing AWS SSM parameter: {param_name}")
-    return response['Parameters'][0]['Value']
+    return response['Parameter']['Value']
 
 
 account_sid = get_ssm_param('TWILIO_ACCOUNT_SID')
@@ -77,7 +81,8 @@ AUTH0M_CLIENT_ID = get_ssm_param('AUTH0M_CLIENT_ID')
 AUTH0M_CLIENT_SECRET = get_ssm_param('AUTH0M_CLIENT_SECRET')
 AUTH0MAUDIENCE = get_ssm_param('AUTH0MAUDIENCE')
 
-logger.info('## ENVIRONMENT VARIABLES\r' + jsonpickle.encode(dict(**os.environ)))
+# logger.info('## ENVIRONMENT VARIABLES\r' +
+#             jsonpickle.encode(dict(**os.environ)))
 
 ######################## GLOBAL RESCOURSES #####################################
 hashids = Hashids()
@@ -291,7 +296,10 @@ def add_data_to_db(event, context=""):
     to_sid = event["to_sid"]
     quote_length = len(quote)
     num_unique_words = get_unique_words(quote)
-    quote_category = get_quote_category(quote)
+    try:
+        quote_category = get_quote_category(quote)
+    except Exception as e:
+        quote_category = "NA"
 
     put_quote_res = clientdb.put_item(
         TableName=dynamodb_table,
@@ -323,6 +331,8 @@ def add_data_to_db(event, context=""):
     return (put_quote_res, put_trxn_res)
 
 ######################## get quote class #######################################
+
+
 class Quotes():
     def getInfo(self):
         author, quote = self.get_quote()
@@ -372,9 +382,11 @@ class Quote_from_web1(Quotes):
     def get_quote(self):
         url = self.random_search_url()
         new_soup = self.make_soup(url)
-        ls = [self.catch(lambda: {tag.find('img', alt=True)['alt']: tag.find(attrs={"class": "fbquote"}).text}) for tag in new_soup.ul.find_all("li", recursive=True)]
+        ls = [self.catch(lambda: {tag.find('img', alt=True)['alt']: tag.find(attrs={
+                         "class": "fbquote"}).text}) for tag in new_soup.ul.find_all("li", recursive=True)]
         choice = random.choice(list(filter(None, ls)))
         for aut, quote in choice.items():
+            update_logger(["grabbed quote from Quote_from_web1"])
             return aut, quote
 
 
@@ -393,7 +405,8 @@ class Quote_from_web2(Quotes):
         dict = {}
         table = soup.find(attrs={"class": "quotedb_navresults"})
         for link in table.find_all("a"):
-            dict[link.text] = re.search('(?<=\/category\/).*[^\][\/\d*$]', link.get("href")).group(0)
+            dict[link.text] = re.search(
+                '(?<=\/category\/).*[^\][\/\d*$]', link.get("href")).group(0)
         return dict
 
     def max_page(self, soup):
@@ -401,7 +414,8 @@ class Quote_from_web2(Quotes):
         table = soup.find(attrs={"class": "pager"})
         for link in table.find_all("li"):
             list.append(link.text)
-        list2 = [item for subitem in list for item in subitem.split() if item.isdigit()]
+        list2 = [item for subitem in list for item in subitem.split()
+                 if item.isdigit()]
         return max(list2)
 
     def random_search_url(self, categories_dict):
@@ -429,7 +443,7 @@ class Quote_from_web2(Quotes):
             dict[auth] = quote_link.text
         aut = random.choice(list(dict))
         quote = dict[aut]
-        # print('Grabbing new quote from_web')
+        update_logger(["grabbed quote from Quote_from_web2"])
         return aut, quote
 
 
@@ -440,10 +454,11 @@ class Quote_from_Api(Quotes):
         self.headers = {
             'x-rapidapi-host': xrapidapihost,
             'x-rapidapi-key': xrapidapikey
-            }
+        }
 
     def get_response(self):
-        response = requests.get(self.url, headers=self.headers, params=self.querystring)
+        response = requests.get(
+            self.url, headers=self.headers, params=self.querystring)
         res = json.loads(response.text)
         return res
 
@@ -451,6 +466,7 @@ class Quote_from_Api(Quotes):
         res = self.get_response()
         quote = res['content']
         aut = res['originator']['name']
+        update_logger(["grabbed quote from Quote_from_Api"])
         return aut, quote
 
 
@@ -469,7 +485,8 @@ class Quote_from_twitter(Quotes):
                 # possibly_sensitive, promoted_metrics, public_metrics, referenced_tweets,
                 # source, text, and withheld
         """
-        target_list = ['MomentumdashQ', 'LeadershipQuote', 'BrainyQuote', 'UpliftingQuotes', 'GreatestQuotes']
+        target_list = ['MomentumdashQ', 'LeadershipQuote',
+                       'BrainyQuote', 'UpliftingQuotes', 'GreatestQuotes']
         target = random.choice(target_list)
         query = f"from:{target}"
         tweet_fields = "tweet.fields=text"
@@ -515,6 +532,7 @@ class Quote_from_twitter(Quotes):
         quotetup = random.choice(tweet_list)
         quote = quotetup[0]
         aut = quotetup[1]
+        update_logger(["grabbed quote from Quote_from_twitter"])
         return aut, quote
 
 
@@ -522,15 +540,15 @@ class Quote_from_twitter(Quotes):
 def lambda_handlergq(event, context):
     """
     return dict
-    {
-    quote: quote
-    author: author
-    }
+    example:
+        {
+            'author': 'Jane Austen', 
+            'quote': 'When I fall in love, it will be forever.'
+        }
     """
     SENTINAL = True
     while SENTINAL:
-        cl = random.choice(
-            [Quote_from_web1(), Quote_from_web2(), Quote_from_Api(), Quote_from_twitter()])
+        cl = random.choice([Quote_from_web1(), Quote_from_twitter()])
         newevent = cl.make_event()
         quote = newevent["quote"]
         SENTINAL = check_if_in_db(quote)
@@ -543,7 +561,7 @@ def check_if_in_db(quote):
     returns Bool, whether quote already in Dynamodb table
     """
     resp = DynamoDBTable.scan(
-        FilterExpression=Attr('quote').eq(str(quote))
+        FilterExpression=Attr('QuoteData.quote').eq(str(quote))
     )
     if len(resp['Items']) > 0:
         return True
@@ -555,25 +573,20 @@ def check_if_in_db(quote):
 def lambda_handlergu(event, context):
     """
     return list of users with dict of user info and quote
-    [
-        {
-        email: email,
-        id: username,
-        number: number,
-        event:
+    example:
+        [
             {
-                author: author,
-                quote: quote
+                'email': 'abc@gmail.com', 
+                'user_id': 'auth0|XXXXXXXXXXXXXXXXXX', 
+                'number': '11234567890', 
+                'event': {
+                    'author': 'Roosevelt', 
+                    'quote': 'Character, in the long run, is the decisive factor in the life of an individual and of nations alike.'
+                }
             }
-        }
-    ]
+        ]
     """
     user_info = []
-    # response = cognitoclient.list_users(
-    #     UserPoolId=UserPoolId,
-    #     AttributesToGet=['email', 'phone_number'],
-    #     Filter="status = 'Enabled'"
-    # )
     response = get_all_users_fromAuth0()
 
     for i, user in enumerate(response):
@@ -592,7 +605,7 @@ def lambda_handlerte(event, context):
     """
     returns dict
     {
-        body: quote | author,
+        body: 'quote | author',
         quote: quote,
         author: author,
         account_sid: account_sid,
@@ -631,7 +644,7 @@ def lambda_handlerst(event, context):
     """
     returns dict
     {
-        body: quote | author,
+        body: 'quote | author',
         quote: quote,
         author: author,
         account_sid: account_sid,
@@ -671,27 +684,43 @@ def get_quote_category(quote):
 
 def lambda_handlerdb(event, context):
     """
-    returns Dynamo DB put response
-    """
-    # quote = event["quote"]
-    # author = event["author"]
-    # sid = event["sid"]
-    # quote_length = len(quote)
-    # num_unique_words = get_unique_words(quote)
-    # quote_category = get_quote_category(quote)
+    returns a tuple with Dynamo DB responses for quote meta and quotetrxn data
+    ({
+        'ResponseMetadata': {
+            'RequestId': 'XXXXXXXXXXXXXXXXXXXXXXXXX', 
+            'HTTPStatusCode': 200, 
+            'HTTPHeaders': {
+                'server': 'Server', 
+                'date': 'Mon, 04 Jan 2021 01:20:41 GMT', 
+                'content-type': 'application/x-amz-json-1.0', 
+                'content-length': '2', 
+                'connection': 'keep-alive', 
+                'x-amzn-requestid': 'XXXXXXXXXXXXXXXXXXXXXX', 
+                'x-amz-crc32': '1234567890'
+                }, 
+                'RetryAttempts': 0
+        }}, 
+        {
+        'ResponseMetadata': {
+            'RequestId': 'XXXXXXXXXXXXXXXXXXXXXXXXX', 
+            'HTTPStatusCode': 200, 
+            'HTTPHeaders': {
+                'server': 'Server', 
+                'date': 'Mon, 04 Jan 2021 01:20:41 GMT', 
+                'content-type': 'application/x-amz-json-1.0', 
+                'content-length': '2', 
+                'connection': 'keep-alive', 
+                'x-amzn-requestid': 'XXXXXXXXXXXXXXXXXXXXXX', 
+                'x-amz-crc32': '1234567890'
+                }, 
+                'RetryAttempts': 0
+        }
+    })
 
-    # res = clientdb.put_item(
-    #     TableName=dynamodb_table,
-    #     Item={
-    #         'quote': {'S': quote},
-    #         'author': {'S': author},
-    #         'to_sid': {'S': sid},
-    #         'quote_length': {'N': str(quote_length)},
-    #         'num_unique_words': {'N': str(num_unique_words)},
-    #         'from_sid': {'S': "na"},
-    #         'vote': {'S': "na"},
-    #         'quote_category': {'S': quote_category},
-    #     })
+    Note: At this point the quotetrxn record has VoteData.from_sid & VoteData.vote as "TBD". 
+    This will be updated when user responds to the sms.
+    """
+
     res = add_data_to_db(event)
 
     update_logger([res])
@@ -716,9 +745,8 @@ def lambda_handler(event, context):
     update_logger([dynamo_event])
     return json_response(dynamo_event)
 
-################################################################################
-
+############################ LOCAL TESTING ######################################
 
 # if __name__ == '__main__':
-#     outcome = lambda_handler("", "")
-#     print(outcome)
+    # outcome = lambda_handler("", "")
+    # print(outcome)
