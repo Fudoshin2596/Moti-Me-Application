@@ -95,7 +95,6 @@ data/text_classification.pkl
 data/outputs/roberta-base.tar.gz
 motime-application.code-workspace
 data/outputs
-data/assets
 
 # H2O Wave
 *.state
