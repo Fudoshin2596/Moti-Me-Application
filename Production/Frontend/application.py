@@ -27,92 +27,52 @@ load_dotenv(find_dotenv())
 
 ENV = 'PROD'
 
+######################## GLOBAL RESCOURSES #####################################
 
-#################
-# Flask configs
-SECRET_KEY = 'xHhsZkr0Ajo4TRfPB81QNwjrVxlHpWfd'
-FLASK_APP = 'application.py'
-FLASK_ENV = 'development'
-SERVER_LOCAL = 'http://localhost:3000/'
-SERVER_PROD = 'http://motimefrontend-env.eba-5ihw4kgi.us-east-1.elasticbeanstalk.com/'
-
-# Auth0
-AUTH0_CLIENT_ID = 'UnSgI1mjRNql7vJwan8fcWl2tHF47Vdi'
-AUTH0_DOMAIN = 'dev-376w9ix0.us.auth0.com'
-AUTH0_CLIENT_SECRET = 'vF3zywhe0tyv7J09t_PhhmXaJ95KQBjDSJZ_zuHn3JDl_O3_dswtdJV5OZ9zzg21'
-AUTH0_CALLBACK = 'callback'
-AUTH0_AUDIENCE = ""
-PROFILE_KEY = 'profile'
-JWT_PAYLOAD = 'jwt_payload'
-
-# Auth0 Mgmt api
-AUTH0M_CLIENT_ID = '9fhVvKCubpj3z8DuFkWoD9sF0QChJz2a'
-AUTH0M_CLIENT_SECRET = 'ycnMv89b-TBAwOxScngTQ6uL1ca8NbS8FDUPoshc5pgcvMnZMQBBWW_LX4kTfRgC'
-AUTH0MAUDIENCE = "https://dev-376w9ix0.us.auth0.com/api/v2/"
-
-# Tokens for Twilio Twitter
-Twitter_API_KEY = "IMwr4e2eKCLNY7ksZkjCygiIj"
-Twitter_API_SECRET = "v3rhjBml9gvrTy3DYZSdZDsLwnM2ENvbTjy54D4dmHea0QyO4E"
-Twitter_BEARER_TOKEN = "AAAAAAAAAAAAAAAAAAAAAEocHAEAAAAAYSPA20OBX0wPQLVh900yye7%2FD%2Bs%3DU6whZLaa1AxDvFnqroQVxOAeeC6TXDxp5S1CXBZFkiOWRq04ZB"
-
-# Tokens for Twilio
-Target_number1 = "+13479955684"  # Joel's number
-Target_number2 = "+17188090577"  # Ash's number
-TWILIO_PHONE_NUMBER = "+12056228196"
-TWILIO_ACCOUNT_SID = "ACf332ed87ff1d38f604fc1415d41f6274"
-TWILIO_AUTH_TOKEN = "f3fe3f53e86d83170260bfdfa22a9582"
-TWILIO_RECP = 'Test User'
-
-# XRAPID
-XRAPIDURL = "https://quotes15.p.rapidapi.com/quotes/random/"
-XRAPIDHOST = "quotes15.p.rapidapi.com"
-XRAPIDKEY = "6febe2776cmsh840e1df37a1deddp1df229jsn4ae2d256adca"
-
-#AWS
-dynamodb_table = "QuotesM"
-AWS_ACCESS_KEY = "AKIAXRO5VIL535NVKNBU"
-AWS_SECRET_KEY = "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"
-lambda_function_name_url = 'https://57xcgue90i.execute-api.eu-central-1.amazonaws.com/dev'
-FLASKS3_BUCKET_NAME = 'moti-me-dashboard'
-FLASKS3_REGION = 'us-east-1'
-
-#######################################
-# ######################## GLOBAL RESCOURSES #####################################
-
-# # AWS SSM encrypted parameter store
-# ssm = boto3.client('ssm', region_name='us-east-1')
-
-# def get_ssm_param(param_name, required=True):
-#     """Get an encrypted AWS Systems Manger secret."""
-#     response = ssm.get_parameters(
-#         Names=[param_name],
-#         WithDecryption=True,
-#     )
-#     if not response['Parameters'] or not response['Parameters'][0] or not response['Parameters'][0]['Value']:
-#         if not required:
-#             return None
-#         raise Exception(
-#             f"Configuration error: missing AWS SSM parameter: {param_name}")
-#     return response['Parameters'][0]['Value']
+# AWS SSM encrypted parameter store
+ssm = boto3.client('ssm')
 
 
-# if ENV == 'DEV':
-#     SERVER = os.getenv('SERVER_LOCAL')
-# else:
-#     SERVER = os.getenv('SERVER_PROD')
-SERVER = SERVER_PROD
-# AUTH0_CALLBACK = os.getenv('AUTH0_CALLBACK')
-AUTH0_CALLBACK_URL = f"{SERVER}{AUTH0_CALLBACK}"
-# AUTH0_CLIENT_ID = os.getenv('AUTH0_CLIENT_ID')
-# AUTH0_CLIENT_SECRET = os.getenv('AUTH0_CLIENT_SECRET')
-# AUTH0_DOMAIN = os.getenv('AUTH0_DOMAIN')
+def get_ssm_param(param_name: str, required: bool = True) -> str:
+    """Get an encrypted AWS Systems Manger secret."""
+    response = ssm.get_parameter(
+        Name=param_name,
+        WithDecryption=True,
+    )
+    if not response['Parameter']:
+        if not required:
+            return None
+        raise Exception(
+            f"Configuration error: missing AWS SSM parameter: {param_name}")
+    return response['Parameter']['Value']
+
+
+if ENV == 'DEV':
+    SERVER = os.getenv('SERVER_LOCAL')
+else:
+    SERVER = os.getenv('SERVER_PROD')
+account_sid = get_ssm_param('TWILIO_ACCOUNT_SID')
+auth_token = get_ssm_param('TWILIO_AUTH_TOKEN')
+TWILIO_PHONE_NUMBER = get_ssm_param("TWILIO_PHONE_NUMBER")
+Twitter_auth = get_ssm_param("Twitter_BEARER_TOKEN")
+XRAPIDURL = get_ssm_param('XRAPIDURL')
+xrapidapihost = get_ssm_param('XRAPIDHOST')
+xrapidapikey = get_ssm_param('XRAPIDKEY')
+prediction_lambda_url = get_ssm_param("lambda_function_name_url")
+
+SERVER_LOCAL = get_ssm_param('SERVER_LOCAL')
+AUTH0_CALLBACK = get_ssm_param('AUTH0_CALLBACK')
+AUTH0_CALLBACK_URL = f"{SERVER_LOCAL}{AUTH0_CALLBACK}"
+AUTH0_CLIENT_ID = get_ssm_param('AUTH0_CLIENT_ID')
+AUTH0_CLIENT_SECRET = get_ssm_param('AUTH0_CLIENT_SECRET')
+AUTH0_DOMAIN = get_ssm_param('AUTH0_DOMAIN')
 AUTH0_BASE_URL = 'https://' + AUTH0_DOMAIN
-# AUTH0_AUDIENCE = ""
-# JWT_PAYLOAD = os.getenv('JWT_PAYLOAD')
-# PROFILE_KEY = os.getenv('PROFILE_KEY')
-# AUTH0M_CLIENT_ID = os.getenv('AUTH0M_CLIENT_ID')
-# AUTH0M_CLIENT_SECRET = os.getenv('AUTH0M_CLIENT_SECRET')
-# AUTH0MAUDIENCE = os.getenv('AUTH0MAUDIENCE')
+AUTH0_AUDIENCE = ""
+JWT_PAYLOAD = get_ssm_param('JWT_PAYLOAD')
+PROFILE_KEY = get_ssm_param('PROFILE_KEY')
+AUTH0M_CLIENT_ID = get_ssm_param('AUTH0M_CLIENT_ID')
+AUTH0M_CLIENT_SECRET = get_ssm_param('AUTH0M_CLIENT_SECRET')
+AUTH0MAUDIENCE = get_ssm_param('AUTH0MAUDIENCE')
 
 SECRET_KEY = str(uuid.uuid4())
 
@@ -298,5 +258,5 @@ def dashboard():
                            userinfo_pretty=json.dumps(session[JWT_PAYLOAD], indent=4))
 
 
-if __name__ == "__main__":
-    application.run(debug=True, use_reloader=False)
+# if __name__ == "__main__":
+#     application.run(debug=True, use_reloader=False)

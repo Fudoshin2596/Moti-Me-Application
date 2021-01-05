@@ -53,6 +53,7 @@ Deployment/Sign-up Link: http://bit.ly/38UAqGe
 - Auth0 (user authentication, sign-up and log-in)
 - Dynamodb (NoSQL - modifed as an adjacency map to mimic many-to-many relationships)
 - Lambda
+- API Gateway (for Twilio webhook)
 - State Machine (for function workflow and scheduler)
 - Elastic Beanstalk (for frontend, integrated with CI/CD using Cloud Pipeline to push git changes to deployment automatically)
 - Cloudformation (for cloud infrastructure management)
