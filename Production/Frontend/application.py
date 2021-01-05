@@ -17,7 +17,7 @@ from dotenv import load_dotenv, find_dotenv
 
 # # AWS
 import boto3
-from boto3.dynamodb.conditions import Attr
+from boto3.dynamodb.conditions import Key, Attr
 
 load_dotenv(find_dotenv())
 
@@ -26,7 +26,7 @@ ENV = 'PROD'
 ######################## GLOBAL RESCOURSES #####################################
 
 # AWS SSM encrypted parameter store
-ssm = boto3.client('ssm')
+ssm = boto3.client('ssm', region_name='us-east-1')
 
 
 def get_ssm_param(param_name: str, required: bool = True) -> str:
@@ -44,11 +44,9 @@ def get_ssm_param(param_name: str, required: bool = True) -> str:
 
 
 if ENV == 'DEV':
-    SERVER = os.getenv('SERVER_LOCAL')
+    SERVER = get_ssm_param('SERVER_LOCAL')
 else:
-    SERVER = os.getenv('SERVER_PROD')
-prediction_lambda_url = get_ssm_param("lambda_function_name_url")
-
+    SERVER = get_ssm_param('SERVER_PROD')
 AUTH0_CALLBACK = get_ssm_param('AUTH0_CALLBACK')
 AUTH0_CALLBACK_URL = f"{SERVER}{AUTH0_CALLBACK}"
 AUTH0_CLIENT_ID = get_ssm_param('AUTH0_CLIENT_ID')
@@ -61,7 +59,7 @@ PROFILE_KEY = get_ssm_param('PROFILE_KEY')
 AUTH0M_CLIENT_ID = get_ssm_param('AUTH0M_CLIENT_ID')
 AUTH0M_CLIENT_SECRET = get_ssm_param('AUTH0M_CLIENT_SECRET')
 AUTH0MAUDIENCE = get_ssm_param('AUTH0MAUDIENCE')
-
+prediction_lambda_url = get_ssm_param("lambda_function_name_url")
 SECRET_KEY = str(uuid.uuid4())
 
 hashids = Hashids()
@@ -77,14 +75,17 @@ class Config(object):
     def DATABASE_URI(self):         # Note: all caps
         return 'sqlite:///:memory:'
 
+
 class ProductionConfig(Config):
     """Uses production database server."""
     DEBUG = False
+
 
 class DevelopmentConfig(Config):
     DEBUG = True
 
 # ######################## APP PREP #####################################
+
 
 # # create and configure the app
 application = Flask(__name__)
@@ -110,11 +111,13 @@ auth0 = oauth.register(
     },
 )
 
+
 @application.errorhandler(Exception)
 def handle_auth_error(ex):
     response = jsonify(message=str(ex))
     response.status_code = (ex.code if isinstance(ex, HTTPException) else 500)
     return response
+
 
 def requires_auth(f):
     @wraps(f)
@@ -126,6 +129,7 @@ def requires_auth(f):
     return decorated
 
 # ######################## HELPER FUNCTIONS #####################################
+
 
 def merge(shared_key, *iterables):
     """
@@ -203,9 +207,11 @@ def create_usertable_info(user_id):
 
 # ######################## ROUTES #####################################
 
+
 @application.route('/')
 def home():
     return render_template('index.html')
+
 
 @application.route('/callback')
 def callback_handling():
@@ -221,12 +227,14 @@ def callback_handling():
         'picture': userinfo['picture'],
         'phone_number': userinfo['https://motime.com/phone_number']
     }
-    
+
     return redirect('/dashboard')
+
 
 @application.route('/login')
 def login():
     return auth0.authorize_redirect(redirect_uri=AUTH0_CALLBACK_URL, audience=AUTH0_AUDIENCE)
+
 
 @application.route('/logout')
 def logout():
@@ -234,6 +242,7 @@ def logout():
     params = {'returnTo': url_for(
         'home', _external=True), 'client_id': AUTH0_CLIENT_ID}
     return redirect(auth0.api_base_url + '/v2/logout?' + urlencode(params))
+
 
 @application.route('/dashboard')
 @requires_auth
@@ -245,6 +254,9 @@ def dashboard():
                            userinfo=session[PROFILE_KEY], quote_info=quote_info,
                            userinfo_pretty=json.dumps(session[JWT_PAYLOAD], indent=4))
 
-
 # if __name__ == "__main__":
-#     application.run(debug=True, use_reloader=False)
+#     if ENV == "DEV":
+#         application.run(host='localhost', debug=True,
+#                         port=3000, use_reloader=False)
+#     else:
+#         application.run(debug=True, use_reloader=False)
