@@ -1,4 +1,4 @@
-![MotiMe App](data/assets/logo_white_background.jpg)
+![MotiMe App](data/assets/moti_me_logo.jpg)
 
 MotiMe is a motivational quote web app.
 
