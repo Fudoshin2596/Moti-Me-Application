@@ -4,6 +4,10 @@ MotiMe is a motivational quote web app.
 
 Deployment/Sign-up Link: http://bit.ly/38UAqGe
 
+Or check out the Test User with:
+Username: motimetestuser@maildrop.cc
+Password: TestUser1
+
 ## Summary
 
 - MotiMe aggregates quotes from 3 sources, 1) Twitter API, 2) RapidApi, 3) web scraping from 2 separate websites. The app then sends quotes to users using the Twilio API and accepts a response message with the users vote on whether they like the quote or not. On the backend, these quotes are stored in a database (Postgres for development, DynamoDB in production) along with a few generated feature columns such as author, num of unique words, length of quote, and quote category. In order to predict the quote category, I have trained a ML/DL model on labelled quotes, and then run a prediction on new incoming quotes predicting the category from a list of 5 pre-defined classes and save that metric to the database. This application is then run on a scheduler periodically sending quotes to the users and accepting their feedback through SMS.
