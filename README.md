@@ -41,6 +41,7 @@ Password: TestUser1
 - BeautifulSoup
 - JSON
 - Yaml
+- Docker
 
 #### Development specific
 - PostgreSQL
@@ -63,6 +64,7 @@ Password: TestUser1
 - State Machine (for function workflow and scheduler)
 - Elastic Beanstalk (for frontend, integrated with CI/CD using Cloud Pipeline to push git changes to deployment automatically)
 - CloudFormation (for cloud infrastructure management)
+- Docker
 
 ##### ML
 
