@@ -2,13 +2,13 @@
 
 MotiMe is a motivational quote web app.
 
-Deployment/Sign-up Link: http://bit.ly/38UAqGe
+Deployment/Sign-up Link: Turn-Off
 
-Or check out the Test User with:
+~~Or check out the Test User with:
 
-Username: motimetestuser@maildrop.cc
+~~Username: motimetestuser@maildrop.cc
 
-Password: TestUser1
+~~Password: TestUser1
 
 ## Summary
 
